@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="MobClaw Android" width="200" />
+  <img src="assets/logo.png" alt="MobClaw Android" width="800" />
 </p>
 
 <h1 align="center">MobClaw Android 🦀</h1>
