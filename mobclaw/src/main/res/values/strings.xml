@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="mobclaw_accessibility_description">MobClaw AI Agent — controls the phone via UI interaction to complete tasks autonomously.</string>
+</resources>

@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="24dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:gravity="center_horizontal">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="🦀 MobClaw Test"
+            android:textSize="28sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/status_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Checking accessibility status..."
+            android:textSize="14sp"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/accessibility_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Open Accessibility Settings"
+            android:layout_marginBottom="8dp" />
+
+        <Button
+            android:id="@+id/overlay_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Grant Overlay Permission"
+            android:layout_marginBottom="16dp" />
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/api_key_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Gemini API Key"
+            android:inputType="textPassword"
+            android:layout_marginBottom="8dp" />
+
+        <com.google.android.material.textfield.TextInputEditText
+            android:id="@+id/task_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Task (e.g. Open Settings and turn on Wi-Fi)"
+            android:inputType="textMultiLine"
+            android:minLines="2"
+            android:layout_marginBottom="16dp" />
+
+        <Button
+            android:id="@+id/execute_button"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="🚀 Execute Task"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
+            android:id="@+id/result_text"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Results will appear here..."
+            android:textSize="14sp"
+            android:fontFamily="monospace"
+            android:background="#f5f5f5"
+            android:padding="16dp" />
+
+    </LinearLayout>
+</ScrollView>
