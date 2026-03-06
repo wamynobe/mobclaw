@@ -98,6 +98,14 @@ MobClaw mirrors ZeroClaw's trait-driven architecture, adapted for Android:
 4. **Execute**: MobClaw resolves "n5" to physical X/Y coordinates and dispatches a tap gesture via the Accessibility Service.
 5. **Repeat**: The loop continues until the LLM calls the `finish` tool.
 
+## 🎬 Demo
+
+<p align="center">
+  <video src="assets/demo.mp4" controls muted playsinline width="360">
+    Your browser does not support the video tag.
+  </video>
+</p>
+
 ## 📜 License
 
 This project is licensed under the [MIT License](LICENSE).
