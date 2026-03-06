@@ -5,134 +5,276 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
-import android.view.View
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import androidx.lifecycle.lifecycleScope
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.mobclaw.android.accessibility.MobClawAccessibilityService
+import com.mobclaw.android.core.AgentResult
 import com.mobclaw.android.core.MobAgent
 import com.mobclaw.android.core.MobClawConfig
 import com.mobclaw.android.overlay.AgentOverlay
 import com.mobclaw.android.overlay.OverlayObserver
+import com.mobclaw.android.provider.AnthropicProvider
 import com.mobclaw.android.provider.GeminiProvider
+import com.mobclaw.android.provider.LlmProvider
+import com.mobclaw.android.provider.OllamaProvider
+import com.mobclaw.android.provider.OpenAiProvider
+import com.mobclaw.android.provider.OpenRouterProvider
 import kotlinx.coroutines.launch
 
 /**
  * Simple test activity to exercise MobClaw agent.
  *
  * Usage:
- * 1. Enter your Gemini API key
- * 2. Grant overlay permission
- * 3. Enable MobClaw accessibility service
- * 4. Type a task and hit "Execute"
+ * 1. Select provider type
+ * 2. Enter API key (not required for local Ollama)
+ * 3. Grant overlay permission
+ * 4. Enable MobClaw accessibility service
+ * 5. Type a task and hit "Execute"
  */
-class MainActivity : AppCompatActivity() {
+class MainActivity : ComponentActivity() {
 
-    private lateinit var apiKeyInput: EditText
-    private lateinit var taskInput: EditText
-    private lateinit var executeButton: Button
-    private lateinit var accessibilityButton: Button
-    private lateinit var overlayButton: Button
-    private lateinit var statusText: TextView
-    private lateinit var resultText: TextView
-
-    private var overlay: AgentOverlay? = null
+    private enum class ProviderType(
+        val label: String,
+        val requiresApiKey: Boolean,
+        val apiKeyHint: String,
+    ) {
+        GEMINI("Gemini", true, "Gemini API Key"),
+        OPENAI("OpenAI", true, "OpenAI API Key"),
+        ANTHROPIC("Anthropic", true, "Anthropic API Key"),
+        OPENROUTER("OpenRouter", true, "OpenRouter API Key"),
+        OLLAMA("Ollama", false, "Ollama API Key (optional)"),
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        setContent {
+            MaterialTheme {
+                Surface(modifier = Modifier.fillMaxSize()) {
+                    DemoScreen()
+                }
+            }
+        }
+    }
 
-        apiKeyInput = findViewById(R.id.api_key_input)
-        taskInput = findViewById(R.id.task_input)
-        executeButton = findViewById(R.id.execute_button)
-        accessibilityButton = findViewById(R.id.accessibility_button)
-        overlayButton = findViewById(R.id.overlay_button)
-        statusText = findViewById(R.id.status_text)
-        resultText = findViewById(R.id.result_text)
+    @Composable
+    private fun DemoScreen() {
+        var selectedProvider by remember { mutableStateOf(ProviderType.GEMINI) }
+        var apiKey by remember { mutableStateOf("") }
+        var task by remember { mutableStateOf("") }
+        var isRunning by remember { mutableStateOf(false) }
+        var resultText by remember { mutableStateOf("Results will appear here...") }
+        var providerMenuExpanded by remember { mutableStateOf(false) }
 
-        accessibilityButton.setOnClickListener {
-            startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+        var accessibilityOk by remember { mutableStateOf(isAccessibilityEnabled()) }
+        var overlayOk by remember { mutableStateOf(isOverlayPermissionGranted()) }
+        val lifecycleOwner = LocalLifecycleOwner.current
+        val scope = rememberCoroutineScope()
+
+        DisposableEffect(lifecycleOwner) {
+            val observer = LifecycleEventObserver { _, event ->
+                if (event == Lifecycle.Event.ON_RESUME) {
+                    accessibilityOk = isAccessibilityEnabled()
+                    overlayOk = isOverlayPermissionGranted()
+                }
+            }
+            lifecycleOwner.lifecycle.addObserver(observer)
+            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
-        overlayButton.setOnClickListener {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("🦀 MobClaw Test", style = MaterialTheme.typography.headlineMedium)
+
+            if (!accessibilityOk || !overlayOk) {
+                Text(
+                    text = buildString {
+                        if (!accessibilityOk) appendLine("❌ Accessibility Service: tap button to enable")
+                        if (!overlayOk) append("❌ Overlay Permission: tap button to grant")
+                    }.trim(),
+                    style = MaterialTheme.typography.bodyMedium
                 )
-                startActivity(intent)
-            } else {
-                Toast.makeText(this, "Overlay permission already granted", Toast.LENGTH_SHORT).show()
             }
+
+            if (!accessibilityOk) {
+                Button(
+                    onClick = { openAccessibilitySettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Open Accessibility Settings")
+                }
+            }
+
+            if (!overlayOk) {
+                Button(
+                    onClick = { openOverlaySettings() },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Grant Overlay Permission")
+                }
+            }
+
+            Text("Provider", style = MaterialTheme.typography.labelLarge)
+            Box(modifier = Modifier.fillMaxWidth()) {
+                Button(
+                    onClick = { providerMenuExpanded = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(selectedProvider.label)
+                }
+                DropdownMenu(
+                    expanded = providerMenuExpanded,
+                    onDismissRequest = { providerMenuExpanded = false }
+                ) {
+                    ProviderType.entries.forEach { provider ->
+                        DropdownMenuItem(
+                            text = { Text(provider.label) },
+                            onClick = {
+                                selectedProvider = provider
+                                providerMenuExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
+            OutlinedTextField(
+                value = apiKey,
+                onValueChange = { apiKey = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text(selectedProvider.apiKeyHint) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                visualTransformation = PasswordVisualTransformation(),
+                singleLine = true
+            )
+
+            OutlinedTextField(
+                value = task,
+                onValueChange = { task = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 96.dp),
+                label = { Text("Task (e.g. Open Settings and turn on Wi-Fi)") }
+            )
+
+            Button(
+                onClick = {
+                    val trimmedKey = apiKey.trim()
+                    val trimmedTask = task.trim()
+
+                    if (selectedProvider.requiresApiKey && trimmedKey.isEmpty()) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Enter your ${selectedProvider.label} API key",
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        return@Button
+                    }
+                    if (trimmedTask.isEmpty()) {
+                        Toast.makeText(this@MainActivity, "Enter a task", Toast.LENGTH_SHORT).show()
+                        return@Button
+                    }
+                    if (!isAccessibilityEnabled()) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Enable MobClaw accessibility service first",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@Button
+                    }
+                    if (!isOverlayPermissionGranted()) {
+                        Toast.makeText(
+                            this@MainActivity,
+                            "Grant overlay permission first",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@Button
+                    }
+
+                    isRunning = true
+                    resultText = "🦀 Executing..."
+                    scope.launch {
+                        try {
+                            val result = executeTask(selectedProvider, trimmedKey, trimmedTask)
+                            val status = if (result.success) "✅ Success" else "❌ Failed"
+                            resultText = buildString {
+                                appendLine("$status (${result.iterations} iterations, ${result.duration.inWholeSeconds}s)")
+                                appendLine()
+                                append(result.message)
+                            }
+                        } catch (e: Exception) {
+                            resultText = "❌ Error: ${e.message}"
+                        } finally {
+                            isRunning = false
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isRunning,
+                contentPadding = PaddingValues(vertical = 12.dp)
+            ) {
+                Text(if (isRunning) "Executing..." else "🚀 Execute Task")
+            }
+
+            Text(
+                text = resultText,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color(0xFFF5F5F5))
+                    .padding(16.dp),
+                fontFamily = FontFamily.Monospace
+            )
         }
-
-        executeButton.setOnClickListener {
-            val apiKey = apiKeyInput.text.toString().trim()
-            val task = taskInput.text.toString().trim()
-
-            if (apiKey.isEmpty()) {
-                Toast.makeText(this, "Enter your Gemini API key", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-            if (task.isEmpty()) {
-                Toast.makeText(this, "Enter a task", Toast.LENGTH_SHORT).show()
-                return@setOnClickListener
-            }
-
-            if (MobClawAccessibilityService.instance == null) {
-                Toast.makeText(this, "Enable MobClaw accessibility service first", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-                Toast.makeText(this, "Grant overlay permission first", Toast.LENGTH_LONG).show()
-                return@setOnClickListener
-            }
-
-            executeTask(apiKey, task)
-        }
-
-        updateStatus()
     }
 
-    override fun onResume() {
-        super.onResume()
-        updateStatus()
-    }
-
-    private fun updateStatus() {
-        val accessibilityOk = MobClawAccessibilityService.instance != null
-        val overlayOk = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            Settings.canDrawOverlays(this)
-        } else true
-
-        // Hide buttons and status when granted
-        accessibilityButton.visibility = if (accessibilityOk) View.GONE else View.VISIBLE
-        overlayButton.visibility = if (overlayOk) View.GONE else View.VISIBLE
-
-        if (accessibilityOk && overlayOk) {
-            statusText.visibility = View.GONE
-        } else {
-            statusText.visibility = View.VISIBLE
-            statusText.text = buildString {
-                if (!accessibilityOk) appendLine("❌ Accessibility Service: tap button to enable")
-                if (!overlayOk) append("❌ Overlay Permission: tap button to grant")
-            }.trim()
-        }
-    }
-
-    private fun executeTask(apiKey: String, task: String) {
-        executeButton.isEnabled = false
-        resultText.text = "🦀 Executing..."
-
-        // Create overlay for this session
+    private suspend fun executeTask(
+        providerType: ProviderType,
+        apiKey: String,
+        task: String
+    ): AgentResult {
         val agentOverlay = AgentOverlay(applicationContext)
-        overlay = agentOverlay
 
-        val provider = GeminiProvider(apiKey = apiKey)
+        val provider = buildProvider(providerType, apiKey)
         val agent = MobAgent.builder()
             .provider(provider)
             .observer(OverlayObserver(agentOverlay))
@@ -145,21 +287,48 @@ class MainActivity : AppCompatActivity() {
             agentOverlay.updateStatus("⏹ Stopping...")
         }
 
-        lifecycleScope.launch {
-            try {
-                val result = agent.execute(task)
-                val status = if (result.success) "✅ Success" else "❌ Failed"
-                resultText.text = buildString {
-                    appendLine("$status (${result.iterations} iterations, ${result.duration.inWholeSeconds}s)")
-                    appendLine()
-                    append(result.message)
-                }
-            } catch (e: Exception) {
-                resultText.text = "❌ Error: ${e.message}"
-            } finally {
-                executeButton.isEnabled = true
-                // Overlay stays visible — user can close it manually with ✕
+        return agent.execute(task)
+    }
+
+    private fun buildProvider(providerType: ProviderType, apiKey: String): LlmProvider {
+        return when (providerType) {
+            ProviderType.GEMINI -> GeminiProvider(apiKey = apiKey)
+            ProviderType.OPENAI -> OpenAiProvider(apiKey = apiKey)
+            ProviderType.ANTHROPIC -> AnthropicProvider(apiKey = apiKey)
+            ProviderType.OPENROUTER -> OpenRouterProvider(apiKey = apiKey)
+            ProviderType.OLLAMA -> {
+                if (apiKey.isBlank()) OllamaProvider()
+                else OllamaProvider(apiKey = apiKey)
             }
+        }
+    }
+
+    private fun isAccessibilityEnabled(): Boolean {
+        return MobClawAccessibilityService.instance != null
+    }
+
+    private fun isOverlayPermissionGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            Settings.canDrawOverlays(this)
+        } else {
+            true
+        }
+    }
+
+    private fun openAccessibilitySettings() {
+        startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+    }
+
+    private fun openOverlaySettings() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    Uri.parse("package:$packageName")
+                )
+            )
+        } else {
+            Toast.makeText(this, "Overlay permission already granted", Toast.LENGTH_SHORT).show()
         }
     }
 }

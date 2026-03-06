@@ -57,7 +57,7 @@ data class ScreenState(
             append("$indent[${node.id}] ${node.className}")
 
             // Resource ID is VERY useful — e.g. "com.android.settings:id/wifi_switch"
-            node.resourceId?.let { append(" (${it.substringAfter(":")}") }
+            node.resourceId?.let { append(" (${it.substringAfter(":")})") }
 
             appendLine()
 

@@ -80,6 +80,29 @@ lifecycleScope.launch {
 }
 ```
 
+### 4. Provider Options
+MobClaw now includes multiple providers out of the box:
+
+```kotlin
+// Gemini
+val gemini = GeminiProvider(apiKey = "YOUR_GEMINI_API_KEY")
+
+// OpenAI
+val openai = OpenAiProvider(apiKey = "YOUR_OPENAI_API_KEY")
+
+// Anthropic
+val anthropic = AnthropicProvider(apiKey = "YOUR_ANTHROPIC_API_KEY")
+
+// OpenRouter
+val openrouter = OpenRouterProvider(apiKey = "YOUR_OPENROUTER_API_KEY")
+
+// Ollama (local or remote OpenAI-compatible endpoint)
+val ollama = OllamaProvider(
+    model = "llama3.2",
+    baseUrl = "http://127.0.0.1:11434/v1"
+)
+```
+
 ## 🛠 Architecture
 
 MobClaw mirrors ZeroClaw's trait-driven architecture, adapted for Android:
