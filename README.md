@@ -124,9 +124,9 @@ MobClaw mirrors ZeroClaw's trait-driven architecture, adapted for Android:
 ## 🎬 Demo
 
 <p align="center">
-  <video src="assets/demo.mp4" controls muted playsinline width="360">
-    Your browser does not support the video tag.
-  </video>
+  <a href="assets/demo.mp4">
+    <img src="assets/demo.gif" alt="MobClaw demo" width="360" />
+  </a>
 </p>
 
 ## 📜 License
