@@ -43,7 +43,7 @@ class ListAppsTool : MobTool {
             addCategory(android.content.Intent.CATEGORY_LAUNCHER)
         }
 
-        val apps = pm.queryIntentActivities(intent, 0)
+        val apps = pm.queryIntentActivities(intent, android.content.pm.PackageManager.MATCH_ALL)
             .map { resolveInfo ->
                 val label = resolveInfo.loadLabel(pm).toString()
                 val pkg = resolveInfo.activityInfo.packageName

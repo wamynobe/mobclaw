@@ -11,6 +11,7 @@ import com.mobclaw.android.observer.LogObserver
 import com.mobclaw.android.observer.MobObserver
 import com.mobclaw.android.overlay.OverlayObserver
 import com.mobclaw.android.provider.LlmProvider
+import com.mobclaw.android.skill.SkillRegistry
 import com.mobclaw.android.tool.*
 import kotlinx.coroutines.delay
 import kotlin.time.Duration
@@ -29,6 +30,8 @@ class MobAgent private constructor(
     private val memory: MobMemory,
     private val observer: MobObserver,
     private val config: MobClawConfig,
+    private val skillRegistry: SkillRegistry,
+    private val loopContext: LoopContext,
 ) {
     private val history = mutableListOf<ConversationMessage>()
 
@@ -49,16 +52,27 @@ class MobAgent private constructor(
      */
     suspend fun execute(task: String): AgentResult {
         cancelled = false
+        loopContext.reset()
         val mark = TimeSource.Monotonic.markNow()
         observer.onAgentStart(task)
         history.clear()
 
-        // Build system prompt with tool instructions
-        val systemPrompt = buildSystemPrompt()
+        // Match skills based on the task and merge any additional tools
+        val matchedSkills = skillRegistry.findMatchingSkills(task)
+        val allTools = if (matchedSkills.isEmpty()) tools
+        else {
+            val skillTools = matchedSkills.flatMap { it.additionalTools() }
+            if (skillTools.isEmpty()) tools
+            else (tools + skillTools).distinctBy { it.name }
+        }
+        val allToolSpecs = allTools.map { it.spec() }
+
+        // Build system prompt with tool instructions + skill knowledge
+        val systemPrompt = buildSystemPrompt(task, matchedSkills)
         history.add(ConversationMessage.Chat(ChatMessage.system(systemPrompt)))
 
         // Initial screen read
-        val screenTool = tools.filterIsInstance<ScreenReadTool>().firstOrNull()
+        val screenTool = allTools.filterIsInstance<ScreenReadTool>().firstOrNull()
         val initialScreen = screenTool?.execute(kotlinx.serialization.json.buildJsonObject {})
         val screenContext = if (initialScreen?.success == true) {
             // Feed screen state to overlay + GestureEngine for node resolution & fallback
@@ -90,7 +104,7 @@ class MobAgent private constructor(
             val response = try {
                 provider.chat(
                     messages = messages,
-                    tools = if (dispatcher.shouldSendToolSpecs()) toolSpecs else null,
+                    tools = if (dispatcher.shouldSendToolSpecs()) allToolSpecs else null,
                     model = config.model,
                     temperature = config.temperature,
                 )
@@ -147,7 +161,7 @@ class MobAgent private constructor(
                 }
 
                 val toolMark = TimeSource.Monotonic.markNow()
-                val tool = tools.find { it.name == action.name }
+                val tool = allTools.find { it.name == action.name }
 
                 val result = if (tool != null) {
                     val toolResult = try {
@@ -217,11 +231,15 @@ class MobAgent private constructor(
                     val screenState = ScreenReader.read()
                     (observer as? OverlayObserver)?.currentScreenState = screenState
                     GestureEngine.lastScreenState = screenState
+
+                    // Build screen update message, include loop status if active
+                    val loopStatus = if (loopContext.isActive) "\n${loopContext.statusText()}" else ""
                     history.add(ConversationMessage.Chat(
                         ChatMessage.user(
                             "[Updated screen]\n${newScreen.output}\n\n" +
                             "[REMINDER] Original task: \"$task\" — " +
-                            "Make sure you complete ALL parts before calling finish."
+                            "Make sure you complete ALL parts before calling finish." +
+                            loopStatus
                         )
                     ))
                     observer.onScreenRead(
@@ -265,7 +283,10 @@ class MobAgent private constructor(
         }
     }
 
-    private fun buildSystemPrompt(): String = buildString {
+    private fun buildSystemPrompt(
+        task: String,
+        matchedSkills: List<com.mobclaw.android.skill.MobSkill> = emptyList(),
+    ): String = buildString {
         appendLine("""
 You are MobClaw, an expert AI agent that controls an Android phone autonomously.
 You observe the screen via the Android Accessibility Service and interact with UI elements to complete user tasks.
@@ -281,6 +302,7 @@ You have full access to:
 - **System actions**: Back, Home, Recents, Notifications, Quick Settings
 - **Tap coordinates**: For elements that are rendered but not in the accessibility tree (Canvas, WebView, maps)
 - **Wait**: For animations, loading screens, or network operations to complete
+- **Repeat/Loop**: Perform the same set of actions multiple times
 
 ## How to Read the Screen State
 Each screen read gives you a list of UI elements with:
@@ -323,6 +345,14 @@ Common package names:
 - Calendar: com.google.android.calendar
 - Contacts: com.android.contacts
 
+## Repeating / Loop Actions
+When you need to repeat the same set of actions multiple times (e.g. "send this message to 5 contacts", "like the next 3 posts"):
+1. Call `repeat(count, description)` to declare the loop
+2. Perform the actions for iteration 1
+3. Call `repeat_next` to advance to the next iteration
+4. Repeat steps 2-3 until all iterations are done
+5. The system will tell you when the loop is complete, or call `repeat_done` to end early
+
 ## Common Android Navigation Patterns
 - **Back navigation**: Use `system_action(back)` to go to previous screen
 - **Toggles/Switches**: Look for Switch or ToggleButton elements with checked/unchecked state
@@ -363,7 +393,15 @@ Common package names:
 - Use `wait(milliseconds)` after actions that trigger screen transitions (300-1000ms is typical)
 - Use `screen_read()` explicitly if you need to re-observe after a wait
 - Use `system_action(action)` for global navigation (back, home, notifications)
+- Use `repeat(count, description)` when you need to do the same actions multiple times
 """.trimIndent())
+
+        // Inject skill-specific domain knowledge
+        val skillPrompt = skillRegistry.buildSkillPrompt(matchedSkills)
+        if (skillPrompt.isNotEmpty()) {
+            appendLine(skillPrompt)
+        }
+
         appendLine()
         append(dispatcher.promptInstructions(tools))
     }
@@ -397,6 +435,7 @@ Common package names:
         private var memory: MobMemory? = null
         private var observer: MobObserver? = null
         private var config: MobClawConfig = MobClawConfig()
+        private var skillRegistry: SkillRegistry? = null
 
         fun provider(provider: LlmProvider) = apply { this.provider = provider }
         fun tools(tools: List<MobTool>) = apply { this.tools = tools }
@@ -404,12 +443,14 @@ Common package names:
         fun memory(memory: MobMemory) = apply { this.memory = memory }
         fun observer(observer: MobObserver) = apply { this.observer = observer }
         fun config(config: MobClawConfig) = apply { this.config = config }
+        fun skillRegistry(registry: SkillRegistry) = apply { this.skillRegistry = registry }
 
         fun build(): MobAgent {
             val resolvedProvider = provider
                 ?: throw IllegalStateException("LlmProvider is required")
 
-            val resolvedTools = tools ?: defaultTools()
+            val loopContext = LoopContext()
+            val resolvedTools = tools ?: defaultTools(loopContext)
             val toolSpecs = resolvedTools.map { it.spec() }
 
             return MobAgent(
@@ -420,13 +461,15 @@ Common package names:
                 memory = memory ?: InMemoryStorage(),
                 observer = observer ?: LogObserver(),
                 config = config,
+                skillRegistry = skillRegistry ?: SkillRegistry.withDefaults(),
+                loopContext = loopContext,
             )
         }
 
         /**
          * Default tool registry.
          */
-        private fun defaultTools(): List<MobTool> = listOf(
+        private fun defaultTools(loopContext: LoopContext): List<MobTool> = listOf(
             ScreenReadTool(),
             ListAppsTool(),
             OpenAppTool(),
@@ -437,6 +480,9 @@ Common package names:
             ScrollTool(),
             SystemActionTool(),
             WaitTool(),
+            RepeatTool(loopContext),
+            RepeatNextTool(loopContext),
+            RepeatDoneTool(loopContext),
             FinishTool(),
             FailTool(),
         )
