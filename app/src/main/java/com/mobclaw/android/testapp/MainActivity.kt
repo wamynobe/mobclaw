@@ -79,6 +79,7 @@ class MainActivity : ComponentActivity() {
         ANTHROPIC("Anthropic", true, "Anthropic API Key"),
         OPENROUTER("OpenRouter", true, "OpenRouter API Key"),
         OLLAMA("Ollama", false, "Ollama API Key (optional)"),
+        MOBMOCK("MobMock (ChatGPT)", false, "Uses Web Login - No key needed"),
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +102,9 @@ class MainActivity : ComponentActivity() {
         var resultText by remember { mutableStateOf("Results will appear here...") }
         var providerMenuExpanded by remember { mutableStateOf(false) }
 
+        val mobMock = remember { com.mobmock.MobMock(this@MainActivity) }
+        var loginSession by remember { mutableStateOf<com.mobmock.MobMock.LoginSession?>(null) }
+
         var accessibilityOk by remember { mutableStateOf(isAccessibilityEnabled()) }
         var overlayOk by remember { mutableStateOf(isOverlayPermissionGranted()) }
         val lifecycleOwner = LocalLifecycleOwner.current
@@ -117,164 +121,193 @@ class MainActivity : ComponentActivity() {
             onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
         }
 
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Text("🦀 MobClaw Test", style = MaterialTheme.typography.headlineMedium)
+        Box(modifier = Modifier.fillMaxSize()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Text("🦀 MobClaw Test", style = MaterialTheme.typography.headlineMedium)
 
-            if (!accessibilityOk || !overlayOk) {
+                if (!accessibilityOk || !overlayOk) {
+                    Text(
+                        text = buildString {
+                            if (!accessibilityOk) appendLine("❌ Accessibility Service: tap button to enable")
+                            if (!overlayOk) append("❌ Overlay Permission: tap button to grant")
+                        }.trim(),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                if (!accessibilityOk) {
+                    Button(
+                        onClick = { openAccessibilitySettings() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Open Accessibility Settings")
+                    }
+                }
+
+                if (!overlayOk) {
+                    Button(
+                        onClick = { openOverlaySettings() },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Grant Overlay Permission")
+                    }
+                }
+
+                Text("Provider", style = MaterialTheme.typography.labelLarge)
+                Box(modifier = Modifier.fillMaxWidth()) {
+                    Button(
+                        onClick = { providerMenuExpanded = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(selectedProvider.label)
+                    }
+                    DropdownMenu(
+                        expanded = providerMenuExpanded,
+                        onDismissRequest = { providerMenuExpanded = false }
+                    ) {
+                        ProviderType.entries.forEach { provider ->
+                            DropdownMenuItem(
+                                text = { Text(provider.label) },
+                                onClick = {
+                                    selectedProvider = provider
+                                    providerMenuExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = apiKey,
+                    onValueChange = { apiKey = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(selectedProvider.apiKeyHint) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    visualTransformation = PasswordVisualTransformation(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = task,
+                    onValueChange = { task = it },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 96.dp),
+                    label = { Text("Task (e.g. Open Settings and turn on Wi-Fi)") }
+                )
+
+                Button(
+                    onClick = {
+                        val trimmedKey = apiKey.trim()
+                        val trimmedTask = task.trim()
+
+                        if (selectedProvider.requiresApiKey && trimmedKey.isEmpty()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Enter your ${selectedProvider.label} API key",
+                                Toast.LENGTH_SHORT
+                            ).show()
+                            return@Button
+                        }
+                        if (trimmedTask.isEmpty()) {
+                            Toast.makeText(this@MainActivity, "Enter a task", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+                        if (!isAccessibilityEnabled()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Enable MobClaw accessibility service first",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@Button
+                        }
+                        if (!isOverlayPermissionGranted()) {
+                            Toast.makeText(
+                                this@MainActivity,
+                                "Grant overlay permission first",
+                                Toast.LENGTH_LONG
+                            ).show()
+                            return@Button
+                        }
+
+                        scope.launch {
+                            if (selectedProvider == ProviderType.MOBMOCK && !mobMock.isLoggedIn()) {
+                                loginSession = mobMock.startLogin()
+                                return@launch
+                            }
+                            
+                            isRunning = true
+                            resultText = "🦀 Executing..."
+                            try {
+                                val result = executeTask(mobMock, selectedProvider, trimmedKey, trimmedTask)
+                                val status = if (result.success) "✅ Success" else "❌ Failed"
+                                resultText = buildString {
+                                    appendLine("$status (${result.iterations} iterations, ${result.duration.inWholeSeconds}s)")
+                                    appendLine()
+                                    append(result.message)
+                                }
+                            } catch (e: Exception) {
+                                resultText = "❌ Error: ${e.message}"
+                            } finally {
+                                isRunning = false
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isRunning,
+                    contentPadding = PaddingValues(vertical = 12.dp)
+                ) {
+                    Text(if (isRunning) "Executing..." else "🚀 Execute Task")
+                }
+
                 Text(
-                    text = buildString {
-                        if (!accessibilityOk) appendLine("❌ Accessibility Service: tap button to enable")
-                        if (!overlayOk) append("❌ Overlay Permission: tap button to grant")
-                    }.trim(),
-                    style = MaterialTheme.typography.bodyMedium
+                    text = resultText,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(Color(0xFFF5F5F5))
+                        .padding(16.dp),
+                    fontFamily = FontFamily.Monospace
                 )
             }
 
-            if (!accessibilityOk) {
-                Button(
-                    onClick = { openAccessibilitySettings() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Open Accessibility Settings")
-                }
-            }
-
-            if (!overlayOk) {
-                Button(
-                    onClick = { openOverlaySettings() },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Grant Overlay Permission")
-                }
-            }
-
-            Text("Provider", style = MaterialTheme.typography.labelLarge)
-            Box(modifier = Modifier.fillMaxWidth()) {
-                Button(
-                    onClick = { providerMenuExpanded = true },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(selectedProvider.label)
-                }
-                DropdownMenu(
-                    expanded = providerMenuExpanded,
-                    onDismissRequest = { providerMenuExpanded = false }
-                ) {
-                    ProviderType.entries.forEach { provider ->
-                        DropdownMenuItem(
-                            text = { Text(provider.label) },
-                            onClick = {
-                                selectedProvider = provider
-                                providerMenuExpanded = false
+            if (loginSession != null) {
+                ChatGPTLoginWebView(
+                    authUrl = loginSession!!.authUrl,
+                    onAuthSuccess = { code ->
+                        scope.launch {
+                            try {
+                                mobMock.completeLogin(code, loginSession!!)
+                                loginSession = null
+                                Toast.makeText(this@MainActivity, "ChatGPT Login Successful!", Toast.LENGTH_SHORT).show()
+                            } catch (e: Exception) {
+                                Toast.makeText(this@MainActivity, "Login Failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                                loginSession = null
                             }
-                        )
-                    }
-                }
-            }
-
-            OutlinedTextField(
-                value = apiKey,
-                onValueChange = { apiKey = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text(selectedProvider.apiKeyHint) },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                visualTransformation = PasswordVisualTransformation(),
-                singleLine = true
-            )
-
-            OutlinedTextField(
-                value = task,
-                onValueChange = { task = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .heightIn(min = 96.dp),
-                label = { Text("Task (e.g. Open Settings and turn on Wi-Fi)") }
-            )
-
-            Button(
-                onClick = {
-                    val trimmedKey = apiKey.trim()
-                    val trimmedTask = task.trim()
-
-                    if (selectedProvider.requiresApiKey && trimmedKey.isEmpty()) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Enter your ${selectedProvider.label} API key",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        return@Button
-                    }
-                    if (trimmedTask.isEmpty()) {
-                        Toast.makeText(this@MainActivity, "Enter a task", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    if (!isAccessibilityEnabled()) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Enable MobClaw accessibility service first",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@Button
-                    }
-                    if (!isOverlayPermissionGranted()) {
-                        Toast.makeText(
-                            this@MainActivity,
-                            "Grant overlay permission first",
-                            Toast.LENGTH_LONG
-                        ).show()
-                        return@Button
-                    }
-
-                    isRunning = true
-                    resultText = "🦀 Executing..."
-                    scope.launch {
-                        try {
-                            val result = executeTask(selectedProvider, trimmedKey, trimmedTask)
-                            val status = if (result.success) "✅ Success" else "❌ Failed"
-                            resultText = buildString {
-                                appendLine("$status (${result.iterations} iterations, ${result.duration.inWholeSeconds}s)")
-                                appendLine()
-                                append(result.message)
-                            }
-                        } catch (e: Exception) {
-                            resultText = "❌ Error: ${e.message}"
-                        } finally {
-                            isRunning = false
                         }
+                    },
+                    onAuthCancel = {
+                        loginSession = null
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = !isRunning,
-                contentPadding = PaddingValues(vertical = 12.dp)
-            ) {
-                Text(if (isRunning) "Executing..." else "🚀 Execute Task")
+                )
             }
-
-            Text(
-                text = resultText,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(Color(0xFFF5F5F5))
-                    .padding(16.dp),
-                fontFamily = FontFamily.Monospace
-            )
         }
     }
 
     private suspend fun executeTask(
+        mobMock: com.mobmock.MobMock,
         providerType: ProviderType,
         apiKey: String,
         task: String
     ): AgentResult {
         val agentOverlay = AgentOverlay(applicationContext)
 
-        val provider = buildProvider(providerType, apiKey)
+        val provider = buildProvider(mobMock, providerType, apiKey)
         val agent = MobAgent.builder()
             .provider(provider)
             .observer(OverlayObserver(agentOverlay))
@@ -290,7 +323,7 @@ class MainActivity : ComponentActivity() {
         return agent.execute(task)
     }
 
-    private fun buildProvider(providerType: ProviderType, apiKey: String): LlmProvider {
+    private fun buildProvider(mobMock: com.mobmock.MobMock, providerType: ProviderType, apiKey: String): LlmProvider {
         return when (providerType) {
             ProviderType.GEMINI -> GeminiProvider(apiKey = apiKey)
             ProviderType.OPENAI -> OpenAiProvider(apiKey = apiKey)
@@ -300,6 +333,7 @@ class MainActivity : ComponentActivity() {
                 if (apiKey.isBlank()) OllamaProvider()
                 else OllamaProvider(apiKey = apiKey)
             }
+            ProviderType.MOBMOCK -> com.mobclaw.android.testapp.provider.MobMockProvider(mobMock = mobMock)
         }
     }
 

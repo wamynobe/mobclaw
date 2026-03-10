@@ -19,3 +19,6 @@ rootProject.name = "mobclaw-android"
 include(":mobclaw")
 
 include(":app")
+
+include(":mobmock")
+project(":mobmock").projectDir = file("../mobmock")
