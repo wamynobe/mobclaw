@@ -28,6 +28,7 @@
 - 👁️ **Semantic Screen Reading:** Automatically transforms Android's Accessibility node tree into semantic, LLM-friendly text summaries.
 - ⚡ **Real-Time Execution:** Uses Android's `AccessibilityService.dispatchGesture` for instant, reliable UI interactions (clicks, scrolls, typing).
 - 🧠 **Pluggable LLM Providers:** Supports Gemini out of the box, easily extensible to any LLM provider.
+- 🆓 **Zero-Cost Option:** Built-in support for [MobMock](https://github.com/wamynobe/mobmock), allowing you to run agents using ChatGPT's web interface for free without API keys.
 - 🛡️ **Robust Error Recovery:** Built-in safeguards, auto-retry logic, and element ID resolution to handle dynamic Android UIs.
 
 ## 🚀 Quick Start
@@ -101,6 +102,10 @@ val ollama = OllamaProvider(
     model = "llama3.2",
     baseUrl = "http://127.0.0.1:11434/v1"
 )
+
+// MobMock (Free ChatGPT Web Login - No API Key Needed)
+// Requires a context and a web-based login flow. See https://github.com/wamynobe/mobmock
+val mobMockProvider = MobMockProvider(mobMock = MobMock(context))
 ```
 
 ## 🛠 Architecture
