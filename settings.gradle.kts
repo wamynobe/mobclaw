@@ -16,8 +16,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "mobclaw-android"
 
-include(":mobclaw")
-
 include(":app")
 
 include(":mobmock")
