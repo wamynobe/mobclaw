@@ -9,7 +9,7 @@ import kotlin.time.Duration
  * Only shows tool calls from the LLM — not internal events like screen reads.
  * Resolves node IDs to their text from the current screen state.
  */
-class OverlayObserver(private val overlay: AgentOverlay) : MobObserver {
+open class OverlayObserver(private val overlay: AgentOverlay) : MobObserver {
 
     /** Current screen state used to resolve node IDs to text. */
     @Volatile
@@ -49,7 +49,7 @@ class OverlayObserver(private val overlay: AgentOverlay) : MobObserver {
     /**
      * Show LLM reasoning text (assistant text before tool calls).
      */
-    fun onReasoning(text: String) {
+    open fun onReasoning(text: String) {
         overlay.showReasoning(text)
     }
 
@@ -57,7 +57,7 @@ class OverlayObserver(private val overlay: AgentOverlay) : MobObserver {
      * Show a pending LLM action, resolving node IDs to their screen text.
      * Filters out internal tools like screen_read.
      */
-    fun onActionPending(toolName: String, args: Map<String, String>) {
+    open fun onActionPending(toolName: String, args: Map<String, String>) {
         // Skip internal tools
         if (toolName in hiddenTools) return
 

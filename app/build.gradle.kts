@@ -62,7 +62,18 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.animation:animation")
     debugImplementation("androidx.compose.ui:ui-tooling")
+
+    // Navigation
+    implementation("androidx.navigation:navigation-compose:2.8.4")
+
+    // Google Fonts for Compose
+    implementation("androidx.compose.ui:ui-text-google-fonts")
+
+    // Security — Encrypted SharedPreferences
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
 
     // OkHttp for LLM API calls
     implementation("com.squareup.okhttp3:okhttp:4.12.0")

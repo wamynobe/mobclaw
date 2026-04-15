@@ -8,26 +8,8 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.Button
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,16 +17,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.wamynobe.mobclaw.accessibility.MobClawAccessibilityService
-import com.wamynobe.mobclaw.core.AgentResult
 import com.wamynobe.mobclaw.core.MobAgent
 import com.wamynobe.mobclaw.core.MobClawConfig
 import com.wamynobe.mobclaw.overlay.AgentOverlay
@@ -52,287 +28,246 @@ import com.wamynobe.mobclaw.overlay.OverlayObserver
 import com.wamynobe.mobclaw.provider.AnthropicProvider
 import com.wamynobe.mobclaw.provider.GeminiProvider
 import com.wamynobe.mobclaw.provider.LlmProvider
+import com.wamynobe.mobclaw.provider.MobMockProvider
 import com.wamynobe.mobclaw.provider.OllamaProvider
 import com.wamynobe.mobclaw.provider.OpenAiProvider
 import com.wamynobe.mobclaw.provider.OpenRouterProvider
-import com.wamynobe.mobclaw.provider.MobMockProvider
+import com.wamynobe.mobclaw.ui.navigation.MobClawNavigation
+import com.wamynobe.mobclaw.ui.state.AgentUiState
+import com.wamynobe.mobclaw.ui.state.LogLevel
+import com.wamynobe.mobclaw.ui.state.MobClawAppState
+import com.wamynobe.mobclaw.ui.state.ProviderStore
+import com.wamynobe.mobclaw.ui.state.ProviderType
+import com.wamynobe.mobclaw.ui.theme.MobClawTheme
 import kotlinx.coroutines.launch
 
 /**
- * Simple test activity to exercise MobClaw agent.
- *
- * Usage:
- * 1. Select provider type
- * 2. Enter API key (not required for local Ollama)
- * 3. Grant overlay permission
- * 4. Enable MobClaw accessibility service
- * 5. Type a task and hit "Execute"
+ * MobClaw main activity — full navigation with 4 Stitch-designed screens.
  */
 class MainActivity : ComponentActivity() {
 
-    private enum class ProviderType(
-        val label: String,
-        val requiresApiKey: Boolean,
-        val apiKeyHint: String,
-    ) {
-        GEMINI("Gemini", true, "Gemini API Key"),
-        OPENAI("OpenAI", true, "OpenAI API Key"),
-        ANTHROPIC("Anthropic", true, "Anthropic API Key"),
-        OPENROUTER("OpenRouter", true, "OpenRouter API Key"),
-        OLLAMA("Ollama", false, "Ollama API Key (optional)"),
-        MOBMOCK("MobMock (ChatGPT)", false, "Uses Web Login - No key needed"),
-    }
+    private lateinit var providerStore: ProviderStore
+    private var currentAgent: MobAgent? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        providerStore = ProviderStore(this)
+        MobClawAppState.activeProvider = providerStore.getActiveProvider()
+
         setContent {
-            MaterialTheme {
-                Surface(modifier = Modifier.fillMaxSize()) {
-                    DemoScreen()
+            val scope = rememberCoroutineScope()
+            val lifecycleOwner = LocalLifecycleOwner.current
+            val mobMock = remember { com.mobmock.MobMock(this@MainActivity) }
+            var loginSession by remember { mutableStateOf<com.mobmock.MobMock.LoginSession?>(null) }
+
+            // Refresh permission state on resume
+            DisposableEffect(lifecycleOwner) {
+                val observer = LifecycleEventObserver { _, event ->
+                    if (event == Lifecycle.Event.ON_RESUME) {
+                        MobClawAppState.accessibilityEnabled = isAccessibilityEnabled()
+                        MobClawAppState.overlayPermissionGranted = isOverlayPermissionGranted()
+                    }
+                }
+                lifecycleOwner.lifecycle.addObserver(observer)
+                onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+            }
+
+            MobClawTheme {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    MobClawNavigation(
+                        providerStore = providerStore,
+                        onExecuteTask = { task ->
+                            scope.launch {
+                                executeTaskWithUi(mobMock, task) {
+                                    loginSession = it
+                                }
+                            }
+                        },
+                        onStopAgent = {
+                            currentAgent?.cancel()
+                            MobClawAppState.agentState = AgentUiState.IDLE
+                            MobClawAppState.addDebugLog("AGENT", "⏹ Agent stopped by user", LogLevel.WARNING)
+                        },
+                        onOpenAccessibility = { openAccessibilitySettings() },
+                        onOpenOverlayPermission = { openOverlaySettings() },
+                        onMobMockLogin = {
+                            scope.launch {
+                                loginSession = mobMock.startLogin()
+                            }
+                        },
+                    )
+
+                    // MobMock login WebView overlay
+                    if (loginSession != null) {
+                        ChatGPTLoginWebView(
+                            authUrl = loginSession!!.authUrl,
+                            onAuthSuccess = { code ->
+                                scope.launch {
+                                    try {
+                                        mobMock.completeLogin(code, loginSession!!)
+                                        loginSession = null
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "ChatGPT Login Successful!",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                    } catch (e: Exception) {
+                                        Toast.makeText(
+                                            this@MainActivity,
+                                            "Login Failed: ${e.message}",
+                                            Toast.LENGTH_SHORT,
+                                        ).show()
+                                        loginSession = null
+                                    }
+                                }
+                            },
+                            onAuthCancel = { loginSession = null },
+                        )
+                    }
                 }
             }
         }
     }
 
-    @Composable
-    private fun DemoScreen() {
-        var selectedProvider by remember { mutableStateOf(ProviderType.GEMINI) }
-        var apiKey by remember { mutableStateOf("") }
-        var task by remember { mutableStateOf("") }
-        var isRunning by remember { mutableStateOf(false) }
-        var resultText by remember { mutableStateOf("Results will appear here...") }
-        var providerMenuExpanded by remember { mutableStateOf(false) }
+    /**
+     * Execute a task with full UI state management and debug logging.
+     */
+    private suspend fun executeTaskWithUi(
+        mobMock: com.mobmock.MobMock,
+        task: String,
+        onLoginNeeded: (com.mobmock.MobMock.LoginSession) -> Unit,
+    ) {
+        val providerType = MobClawAppState.activeProvider
 
-        val mobMock = remember { com.mobmock.MobMock(this@MainActivity) }
-        var loginSession by remember { mutableStateOf<com.mobmock.MobMock.LoginSession?>(null) }
-
-        var accessibilityOk by remember { mutableStateOf(isAccessibilityEnabled()) }
-        var overlayOk by remember { mutableStateOf(isOverlayPermissionGranted()) }
-        val lifecycleOwner = LocalLifecycleOwner.current
-        val scope = rememberCoroutineScope()
-
-        DisposableEffect(lifecycleOwner) {
-            val observer = LifecycleEventObserver { _, event ->
-                if (event == Lifecycle.Event.ON_RESUME) {
-                    accessibilityOk = isAccessibilityEnabled()
-                    overlayOk = isOverlayPermissionGranted()
-                }
-            }
-            lifecycleOwner.lifecycle.addObserver(observer)
-            onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+        // Validate
+        if (!isAccessibilityEnabled()) {
+            Toast.makeText(this, "Enable MobClaw accessibility service first", Toast.LENGTH_LONG).show()
+            return
+        }
+        if (!isOverlayPermissionGranted()) {
+            Toast.makeText(this, "Grant overlay permission first", Toast.LENGTH_LONG).show()
+            return
         }
 
-        Box(modifier = Modifier.fillMaxSize()) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(24.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text("🦀 MobClaw Test", style = MaterialTheme.typography.headlineMedium)
+        // MobMock requires login
+        if (providerType == ProviderType.MOBMOCK && !mobMock.isLoggedIn()) {
+            onLoginNeeded(mobMock.startLogin())
+            return
+        }
 
-                if (!accessibilityOk || !overlayOk) {
-                    Text(
-                        text = buildString {
-                            if (!accessibilityOk) appendLine("❌ Accessibility Service: tap button to enable")
-                            if (!overlayOk) append("❌ Overlay Permission: tap button to grant")
-                        }.trim(),
-                        style = MaterialTheme.typography.bodyMedium
+        // Check API key for providers that need it
+        val config = providerStore.loadProviderConfig(providerType)
+        if (providerType.requiresApiKey && config.apiKey.isBlank()) {
+            Toast.makeText(this, "Configure API key for ${providerType.label} first", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        // Update UI state
+        MobClawAppState.agentState = AgentUiState.RUNNING
+        MobClawAppState.currentTask = task
+        MobClawAppState.addDebugLog("AGENT", "▶ Starting task: $task", LogLevel.INFO)
+
+        try {
+            val agentOverlay = AgentOverlay(applicationContext)
+            val provider = buildProvider(mobMock, providerType, config)
+
+            val overlayObserver = object : OverlayObserver(agentOverlay) {
+                override fun onAgentStart(taskDesc: String) {
+                    super.onAgentStart(taskDesc)
+                    MobClawAppState.addDebugLog("AGENT", "Initializing agent...", LogLevel.INFO)
+                }
+
+                override fun onToolCall(toolName: String, duration: kotlin.time.Duration, success: Boolean) {
+                    super.onToolCall(toolName, duration, success)
+                    val status = if (success) "✓" else "✗"
+                    MobClawAppState.addDebugLog(
+                        "TOOL",
+                        "$status $toolName (${duration.inWholeMilliseconds}ms)",
+                        if (success) LogLevel.ACTION else LogLevel.ERROR,
                     )
                 }
 
-                if (!accessibilityOk) {
-                    Button(
-                        onClick = { openAccessibilitySettings() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Open Accessibility Settings")
-                    }
+                override fun onScreenRead(packageName: String, nodeCount: Int) {
+                    super.onScreenRead(packageName, nodeCount)
+                    MobClawAppState.addDebugLog(
+                        "SCREEN",
+                        "DOM mapped: $nodeCount reachable nodes",
+                        LogLevel.INFO,
+                    )
                 }
 
-                if (!overlayOk) {
-                    Button(
-                        onClick = { openOverlaySettings() },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Grant Overlay Permission")
-                    }
+                override fun onError(message: String, throwable: Throwable?) {
+                    super.onError(message, throwable)
+                    MobClawAppState.addDebugLog("ERROR", message, LogLevel.ERROR)
                 }
 
-                Text("Provider", style = MaterialTheme.typography.labelLarge)
-                Box(modifier = Modifier.fillMaxWidth()) {
-                    Button(
-                        onClick = { providerMenuExpanded = true },
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(selectedProvider.label)
-                    }
-                    DropdownMenu(
-                        expanded = providerMenuExpanded,
-                        onDismissRequest = { providerMenuExpanded = false }
-                    ) {
-                        ProviderType.entries.forEach { provider ->
-                            DropdownMenuItem(
-                                text = { Text(provider.label) },
-                                onClick = {
-                                    selectedProvider = provider
-                                    providerMenuExpanded = false
-                                }
-                            )
-                        }
-                    }
+                override fun onReasoning(text: String) {
+                    super.onReasoning(text)
+                    MobClawAppState.addDebugLog(
+                        "LLM",
+                        "Intent: \"${text.take(80)}\"",
+                        LogLevel.INFO,
+                    )
                 }
 
-                OutlinedTextField(
-                    value = apiKey,
-                    onValueChange = { apiKey = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    label = { Text(selectedProvider.apiKeyHint) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    visualTransformation = PasswordVisualTransformation(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = task,
-                    onValueChange = { task = it },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 96.dp),
-                    label = { Text("Task (e.g. Open Settings and turn on Wi-Fi)") }
-                )
-
-                Button(
-                    onClick = {
-                        val trimmedKey = apiKey.trim()
-                        val trimmedTask = task.trim()
-
-                        if (selectedProvider.requiresApiKey && trimmedKey.isEmpty()) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Enter your ${selectedProvider.label} API key",
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            return@Button
-                        }
-                        if (trimmedTask.isEmpty()) {
-                            Toast.makeText(this@MainActivity, "Enter a task", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        if (!isAccessibilityEnabled()) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Enable MobClaw accessibility service first",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            return@Button
-                        }
-                        if (!isOverlayPermissionGranted()) {
-                            Toast.makeText(
-                                this@MainActivity,
-                                "Grant overlay permission first",
-                                Toast.LENGTH_LONG
-                            ).show()
-                            return@Button
-                        }
-
-                        scope.launch {
-                            if (selectedProvider == ProviderType.MOBMOCK && !mobMock.isLoggedIn()) {
-                                loginSession = mobMock.startLogin()
-                                return@launch
-                            }
-                            
-                            isRunning = true
-                            resultText = "🦀 Executing..."
-                            try {
-                                val result = executeTask(mobMock, selectedProvider, trimmedKey, trimmedTask)
-                                val status = if (result.success) "✅ Success" else "❌ Failed"
-                                resultText = buildString {
-                                    appendLine("$status (${result.iterations} iterations, ${result.duration.inWholeSeconds}s)")
-                                    appendLine()
-                                    append(result.message)
-                                }
-                            } catch (e: Exception) {
-                                resultText = "❌ Error: ${e.message}"
-                            } finally {
-                                isRunning = false
-                            }
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = !isRunning,
-                    contentPadding = PaddingValues(vertical = 12.dp)
-                ) {
-                    Text(if (isRunning) "Executing..." else "🚀 Execute Task")
+                override fun onActionPending(toolName: String, args: Map<String, String>) {
+                    super.onActionPending(toolName, args)
+                    val argsStr = args.entries.joinToString(", ") { "${it.key}=${it.value}" }.take(60)
+                    MobClawAppState.addDebugLog(
+                        "ACTION",
+                        "$toolName($argsStr)",
+                        LogLevel.ACTION,
+                    )
                 }
-
-                Text(
-                    text = resultText,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(Color(0xFFF5F5F5))
-                        .padding(16.dp),
-                    fontFamily = FontFamily.Monospace
-                )
             }
 
-            if (loginSession != null) {
-                ChatGPTLoginWebView(
-                    authUrl = loginSession!!.authUrl,
-                    onAuthSuccess = { code ->
-                        scope.launch {
-                            try {
-                                mobMock.completeLogin(code, loginSession!!)
-                                loginSession = null
-                                Toast.makeText(this@MainActivity, "ChatGPT Login Successful!", Toast.LENGTH_SHORT).show()
-                            } catch (e: Exception) {
-                                Toast.makeText(this@MainActivity, "Login Failed: ${e.message}", Toast.LENGTH_SHORT).show()
-                                loginSession = null
-                            }
-                        }
-                    },
-                    onAuthCancel = {
-                        loginSession = null
-                    }
-                )
+            val agent = MobAgent.builder()
+                .provider(provider)
+                .observer(overlayObserver)
+                .config(MobClawConfig(model = config.model.ifBlank { null }))
+                .build()
+
+            currentAgent = agent
+
+            // Wire overlay stop → agent cancel
+            agentOverlay.onStopRequested = {
+                agent.cancel()
+                agentOverlay.updateStatus("⏹ Stopping...")
+                MobClawAppState.addDebugLog("AGENT", "⏹ Stop requested via overlay", LogLevel.WARNING)
             }
+
+            val result = agent.execute(task)
+
+            // Record result
+            MobClawAppState.recordTaskResult(task, result)
+            MobClawAppState.agentState = if (result.success) AgentUiState.SUCCESS else AgentUiState.FAILED
+            MobClawAppState.addDebugLog(
+                "AGENT",
+                "${if (result.success) "✅" else "❌"} ${result.message.take(100)}",
+                if (result.success) LogLevel.INFO else LogLevel.ERROR,
+            )
+        } catch (e: Exception) {
+            MobClawAppState.agentState = AgentUiState.FAILED
+            MobClawAppState.addDebugLog("ERROR", "Fatal: ${e.message}", LogLevel.ERROR)
+        } finally {
+            currentAgent = null
         }
     }
 
-    private suspend fun executeTask(
+    private fun buildProvider(
         mobMock: com.mobmock.MobMock,
         providerType: ProviderType,
-        apiKey: String,
-        task: String
-    ): AgentResult {
-        val agentOverlay = AgentOverlay(applicationContext)
-
-        val provider = buildProvider(mobMock, providerType, apiKey)
-        val agent = MobAgent.builder()
-            .provider(provider)
-            .observer(OverlayObserver(agentOverlay))
-            .config(MobClawConfig())
-            .build()
-
-        // Wire stop button to cancel the agent
-        agentOverlay.onStopRequested = {
-            agent.cancel()
-            agentOverlay.updateStatus("⏹ Stopping...")
-        }
-
-        return agent.execute(task)
-    }
-
-    private fun buildProvider(mobMock: com.mobmock.MobMock, providerType: ProviderType, apiKey: String): LlmProvider {
+        config: com.wamynobe.mobclaw.ui.state.ProviderConfig,
+    ): LlmProvider {
         return when (providerType) {
-            ProviderType.GEMINI -> GeminiProvider(apiKey = apiKey)
-            ProviderType.OPENAI -> OpenAiProvider(apiKey = apiKey)
-            ProviderType.ANTHROPIC -> AnthropicProvider(apiKey = apiKey)
-            ProviderType.OPENROUTER -> OpenRouterProvider(apiKey = apiKey)
+            ProviderType.GEMINI -> GeminiProvider(apiKey = config.apiKey)
+            ProviderType.OPENAI -> OpenAiProvider(apiKey = config.apiKey)
+            ProviderType.ANTHROPIC -> AnthropicProvider(apiKey = config.apiKey)
+            ProviderType.OPENROUTER -> OpenRouterProvider(apiKey = config.apiKey)
             ProviderType.OLLAMA -> {
-                if (apiKey.isBlank()) OllamaProvider()
-                else OllamaProvider(apiKey = apiKey)
+                if (config.apiKey.isBlank()) OllamaProvider()
+                else OllamaProvider(apiKey = config.apiKey)
             }
             ProviderType.MOBMOCK -> MobMockProvider(mobMock = mobMock)
         }
@@ -359,7 +294,7 @@ class MainActivity : ComponentActivity() {
             startActivity(
                 Intent(
                     Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
+                    Uri.parse("package:$packageName"),
                 )
             )
         } else {
