@@ -21,7 +21,7 @@ open class OverlayObserver(private val overlay: AgentOverlay) : MobObserver {
     override fun onAgentStart(task: String) {
         overlay.show()
         overlay.clearActions()
-        overlay.updateStatus("▶ $task")
+        overlay.updateStatus("RUN: $task")
     }
 
     override fun onToolCall(toolName: String, duration: Duration, success: Boolean) {
@@ -36,12 +36,12 @@ open class OverlayObserver(private val overlay: AgentOverlay) : MobObserver {
     }
 
     override fun onAgentEnd(task: String, duration: Duration, success: Boolean) {
-        val status = if (success) "✅ Done" else "❌ Failed"
+        val status = if (success) "DONE" else "FAILED"
         overlay.updateStatus("$status (${duration.inWholeSeconds}s)")
     }
 
     override fun onError(message: String, throwable: Throwable?) {
-        overlay.updateStatus("❌ $message")
+        overlay.updateStatus("ERR: $message")
     }
 
     // --- Extended methods for overlay-specific events ---

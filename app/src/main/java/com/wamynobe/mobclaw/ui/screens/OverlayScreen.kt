@@ -42,7 +42,7 @@ import com.wamynobe.mobclaw.ui.theme.MobClawColors
 import com.wamynobe.mobclaw.ui.theme.SpaceGroteskFamily
 
 /**
- * Debug Overlay screen — matches "Live Debug Overlay" Stitch design.
+ * Debug Overlay screen.
  * Shows real-time debug console, current action, and stop button.
  */
 @Composable
@@ -100,8 +100,6 @@ fun OverlayScreen(
 
         // Debug console header
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("💻", style = MaterialTheme.typography.titleSmall)
-            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = "DEBUG_CONSOLE",
                 style = MaterialTheme.typography.titleSmall,
@@ -128,8 +126,6 @@ fun OverlayScreen(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("🔍", style = MaterialTheme.typography.displaySmall)
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "Waiting for agent activity...",
                         style = MaterialTheme.typography.bodyMedium,

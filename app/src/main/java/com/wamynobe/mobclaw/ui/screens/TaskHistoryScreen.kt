@@ -1,6 +1,8 @@
 package com.wamynobe.mobclaw.ui.screens
 
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -39,7 +41,7 @@ import com.wamynobe.mobclaw.ui.theme.MobClawColors
 import com.wamynobe.mobclaw.ui.theme.SpaceGroteskFamily
 
 /**
- * Tasks & History screen — matches "Tasks & History" Stitch design.
+ * Tasks & History screen.
  */
 @Composable
 fun TaskHistoryScreen(onExecuteTask: (String) -> Unit) {
@@ -98,8 +100,6 @@ fun TaskHistoryScreen(onExecuteTask: (String) -> Unit) {
                 contentAlignment = Alignment.Center,
             ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("📋", style = MaterialTheme.typography.displayMedium)
-                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         "No tasks yet",
                         style = MaterialTheme.typography.bodyLarge,
@@ -164,6 +164,7 @@ fun TaskHistoryScreen(onExecuteTask: (String) -> Unit) {
 
 @Composable
 private fun TaskCard(entry: TaskHistoryEntry) {
+    var expanded by remember { mutableStateOf(false) }
     val statusColor = if (entry.success) MobClawColors.StatusSuccess else MobClawColors.Error
     val statusText = if (entry.success) "SUCCESS" else "FAILED"
     val timeAgo = formatTimeAgo(entry.timestamp)
@@ -173,7 +174,9 @@ private fun TaskCard(entry: TaskHistoryEntry) {
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .background(MobClawColors.SurfaceContainer)
-            .padding(20.dp),
+            .clickable { expanded = !expanded }
+            .padding(20.dp)
+            .animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         // Status row
@@ -213,13 +216,26 @@ private fun TaskCard(entry: TaskHistoryEntry) {
 
         // Result message preview
         if (entry.message.isNotBlank()) {
-            Text(
-                text = entry.message,
-                style = MaterialTheme.typography.bodySmall,
-                color = MobClawColors.OnSurfaceVariant.copy(alpha = 0.6f),
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(statusColor.copy(alpha = 0.08f))
+                    .padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "RESULT",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = statusColor,
+                    fontFamily = SpaceGroteskFamily,
+                )
+                Text(
+                    text = entry.message,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MobClawColors.OnSurface,
+                )
+            }
         }
 
         // Duration & iterations

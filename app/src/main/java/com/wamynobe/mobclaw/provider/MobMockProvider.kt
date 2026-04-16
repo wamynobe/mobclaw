@@ -1,14 +1,16 @@
 package com.wamynobe.mobclaw.provider
 
+import android.util.Log
 import com.wamynobe.mobclaw.model.ChatMessage
 import com.wamynobe.mobclaw.model.ChatResponse
 import com.wamynobe.mobclaw.model.ToolCall
 import com.wamynobe.mobclaw.model.ToolSpec
 import com.mobmock.MobMock
+import kotlinx.serialization.json.*
 
 class MobMockProvider(
     private val mobMock: MobMock,
-    private val defaultModel: String = "gpt-5"
+    private val defaultModel: String = "gpt-5.4"
 ) : LlmProvider {
 
     override suspend fun chat(
@@ -27,7 +29,7 @@ class MobMockProvider(
                 "function" to mapOf(
                     "name" to it.name,
                     "description" to it.description,
-                    "parameters" to it.parameters
+                    "parameters" to convertJsonElementToAny(it.parameters)
                 )
             )
         }
@@ -39,7 +41,9 @@ class MobMockProvider(
         )
 
         if (result.errorMessage != null) {
+            Log.e("MobMockProvider", "MobMock API Error: ${result.errorMessage}")
             throw RuntimeException("MobMock API Error: ${result.errorMessage}")
+            //log
         }
 
         val toolCalls = result.toolCalls.map {
@@ -53,7 +57,7 @@ class MobMockProvider(
         // Construct the full text from summary and content if available
         val textBuilder = StringBuilder()
         if (result.reasoningText != null) {
-            textBuilder.append("🤔 ${result.reasoningSummary ?: "Thinking"}\\n")
+            textBuilder.append("[Reasoning] ${result.reasoningSummary ?: "Thinking"}\\n")
             textBuilder.appendLine(result.reasoningText)
             textBuilder.appendLine("---")
         }
@@ -68,4 +72,16 @@ class MobMockProvider(
     }
 
     override fun supportsNativeTools(): Boolean = true
+
+    private fun convertJsonElementToAny(element: JsonElement): Any? {
+        return when (element) {
+            is JsonNull -> null
+            is JsonPrimitive -> {
+                if (element.isString) element.content
+                else element.booleanOrNull ?: element.longOrNull ?: element.doubleOrNull ?: element.content
+            }
+            is JsonArray -> element.map { convertJsonElementToAny(it) }
+            is JsonObject -> element.mapValues { convertJsonElementToAny(it.value) }
+        }
+    }
 }

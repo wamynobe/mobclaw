@@ -190,14 +190,14 @@ class AgentOverlay(private val context: Context) {
             elevation = 8 * dp
         }
 
-        // Header: "🦀 MobClaw" + status + stop + close
+        // Header: "MobClaw" + status + stop + close
         val header = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
 
         val title = TextView(context).apply {
-            text = "🦀 MobClaw"
+            text = "MobClaw"
             setTextColor(0xFFE0E0E0.toInt())
             textSize = 13f
             setPadding(0, 0, (8 * dp).toInt(), 0)
@@ -214,7 +214,7 @@ class AgentOverlay(private val context: Context) {
 
         // Stop button
         stopButton = TextView(context).apply {
-            text = "🛑"
+            text = "STOP"
             textSize = 16f
             setPadding((8 * dp).toInt(), (4 * dp).toInt(), (8 * dp).toInt(), (4 * dp).toInt())
             setOnClickListener { onStopRequested?.invoke() }
@@ -287,7 +287,7 @@ class AgentOverlay(private val context: Context) {
             // Status indicator
             val badge = TextView(context).apply {
                 tag = "action_badge"
-                val icon = if (isPending) "⏳" else "✅"
+                val icon = if (isPending) "..." else "OK"
                 text = icon
                 textSize = 10f
                 setBackgroundColor(

@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.wamynobe.mobclaw.db.TaskHistoryDbHelper
 import com.wamynobe.mobclaw.core.AgentResult
 import kotlin.time.Duration
 
@@ -39,6 +40,19 @@ object MobClawAppState {
     /** Debug console log lines. */
     val debugLog = mutableStateListOf<DebugLogEntry>()
 
+    private var dbHelper: TaskHistoryDbHelper? = null
+
+    fun initHistoryDb(context: android.content.Context) {
+        if (dbHelper == null) {
+            dbHelper = TaskHistoryDbHelper(context.applicationContext)
+            taskHistory.clear()
+            taskHistory.addAll(dbHelper!!.getAllTasks())
+            
+            totalTasksExecuted = taskHistory.size
+            totalIterations = taskHistory.sumOf { it.iterations }
+        }
+    }
+
     fun addDebugLog(tag: String, message: String, level: LogLevel = LogLevel.INFO) {
         val timestamp = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
             .format(java.util.Date())
@@ -52,18 +66,20 @@ object MobClawAppState {
     fun recordTaskResult(task: String, result: AgentResult) {
         totalTasksExecuted++
         totalIterations += result.iterations
-        taskHistory.add(
-            0, // prepend
-            TaskHistoryEntry(
-                task = task,
-                success = result.success,
-                message = result.message,
-                iterations = result.iterations,
-                duration = result.duration,
-                timestamp = System.currentTimeMillis(),
-                provider = activeProvider,
-            )
+        val entry = TaskHistoryEntry(
+            task = task,
+            success = result.success,
+            message = result.message,
+            iterations = result.iterations,
+            duration = result.duration,
+            timestamp = System.currentTimeMillis(),
+            provider = activeProvider,
         )
+        taskHistory.add(0, entry)
+        
+        Thread {
+            dbHelper?.insertTask(entry)
+        }.start()
     }
 }
 
@@ -81,12 +97,12 @@ enum class ProviderType(
     val icon: String,
     val defaultModel: String,
 ) {
-    GEMINI("Gemini", true, "Gemini API Key", "✦", "gemini-2.5-flash"),
-    OPENAI("OpenAI", true, "OpenAI API Key", "◈", "gpt-4o"),
-    ANTHROPIC("Anthropic", true, "Anthropic API Key", "✶", "claude-sonnet-4-20250514"),
-    OPENROUTER("OpenRouter", true, "OpenRouter API Key", "◉", ""),
-    OLLAMA("Ollama", false, "Ollama API Key (optional)", "◎", "llama3"),
-    MOBMOCK("MobMock", false, "Uses Web Login - No key needed", "◆", "gpt-5"),
+    GEMINI("Gemini", true, "Gemini API Key", "G", "gemini-2.5-flash"),
+    OPENAI("OpenAI", true, "OpenAI API Key", "O", "gpt-4o"),
+    ANTHROPIC("Anthropic", true, "Anthropic API Key", "A", "claude-sonnet-4-20250514"),
+    OPENROUTER("OpenRouter", true, "OpenRouter API Key", "R", ""),
+    OLLAMA("Ollama", false, "Ollama API Key (optional)", "L", "llama3"),
+    MOBMOCK("MobMock", false, "Uses Web Login - No key needed", "M", "gpt-5.4"),
 }
 
 data class ProviderConfig(

@@ -59,7 +59,7 @@ import com.wamynobe.mobclaw.ui.theme.MobClawColors
 import com.wamynobe.mobclaw.ui.theme.SpaceGroteskFamily
 
 /**
- * Dashboard screen — matches "MobClaw Dashboard" Stitch design.
+ * Dashboard screen.
  * Shows agent state, progress gauge, stats, and task input.
  */
 @Composable
@@ -173,7 +173,12 @@ private fun TopBar() {
                 .background(MobClawColors.PrimaryContainer.copy(alpha = 0.2f)),
             contentAlignment = Alignment.Center,
         ) {
-            Text("⚡", style = MaterialTheme.typography.bodyMedium)
+            Icon(
+                imageVector = Icons.Filled.PlayArrow,
+                contentDescription = null,
+                tint = MobClawColors.Primary,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }
@@ -209,12 +214,12 @@ private fun PermissionWarnings(
         }
         if (!accessibilityOk) {
             TextButton(onClick = onOpenAccessibility) {
-                Text("❌ Enable Accessibility Service", color = MobClawColors.OnSurface)
+                Text("Enable Accessibility Service", color = MobClawColors.OnSurface)
             }
         }
         if (!overlayOk) {
             TextButton(onClick = onOpenOverlay) {
-                Text("❌ Grant Overlay Permission", color = MobClawColors.OnSurface)
+                Text("Grant Overlay Permission", color = MobClawColors.OnSurface)
             }
         }
     }
@@ -276,7 +281,7 @@ private fun AgentStateCard(agentState: AgentUiState) {
         Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = when (agentState) {
-                AgentUiState.RUNNING -> "Autonomous agent is currently parsing node structures and executing sequential logic optimizations."
+                AgentUiState.RUNNING -> "Agent is currently executing the task."
                 AgentUiState.SUCCESS -> "Task completed successfully."
                 AgentUiState.FAILED -> "Agent encountered an error during execution."
                 AgentUiState.IDLE -> "Agent is ready. Enter a task below to begin."
@@ -352,13 +357,11 @@ private fun StatsRow(tasksExecuted: Int, totalIterations: Int) {
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         StatCard(
-            icon = "✦",
             value = tasksExecuted.toString(),
             label = "Tasks Executed",
             modifier = Modifier.weight(1f),
         )
         StatCard(
-            icon = "⚙",
             value = totalIterations.toString(),
             label = "Total Iterations",
             modifier = Modifier.weight(1f),
@@ -367,15 +370,13 @@ private fun StatsRow(tasksExecuted: Int, totalIterations: Int) {
 }
 
 @Composable
-private fun StatCard(icon: String, value: String, label: String, modifier: Modifier = Modifier) {
+private fun StatCard(value: String, label: String, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .background(MobClawColors.SurfaceContainer)
             .padding(20.dp),
     ) {
-        Text(icon, style = MaterialTheme.typography.titleLarge)
-        Spacer(modifier = Modifier.height(8.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.displaySmall,
@@ -402,8 +403,6 @@ private fun MetricsCard(provider: String) {
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("📊", style = MaterialTheme.typography.titleMedium)
-            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 "Metrics",
                 style = MaterialTheme.typography.titleMedium,

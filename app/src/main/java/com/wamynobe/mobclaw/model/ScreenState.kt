@@ -82,7 +82,7 @@ data class ScreenState(
             if (node.isScrollable) props.add("scrollable")
             if (node.isEditable) props.add("editable")
             if (node.isCheckable) {
-                props.add(if (node.isChecked) "☑ checked" else "☐ unchecked")
+                props.add(if (node.isChecked) "[x] checked" else "[ ] unchecked")
             }
             if (node.isSelected) props.add("selected")
             if (node.isFocused) props.add("focused")

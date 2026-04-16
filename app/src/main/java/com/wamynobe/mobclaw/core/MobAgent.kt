@@ -457,7 +457,9 @@ When you need to repeat the same set of actions multiple times (e.g. "send this 
                 provider = resolvedProvider,
                 tools = resolvedTools,
                 toolSpecs = toolSpecs,
-                dispatcher = dispatcher ?: JsonActionDispatcher(),
+                dispatcher = dispatcher ?: JsonActionDispatcher(
+                    sendToolSpecs = resolvedProvider.supportsNativeTools()
+                ),
                 memory = memory ?: InMemoryStorage(),
                 observer = observer ?: LogObserver(),
                 config = config,

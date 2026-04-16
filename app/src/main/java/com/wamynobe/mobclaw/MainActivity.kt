@@ -54,6 +54,7 @@ class MainActivity : ComponentActivity() {
 
         providerStore = ProviderStore(this)
         MobClawAppState.activeProvider = providerStore.getActiveProvider()
+        MobClawAppState.initHistoryDb(this)
 
         setContent {
             val scope = rememberCoroutineScope()
@@ -234,7 +235,7 @@ class MainActivity : ComponentActivity() {
             agentOverlay.onStopRequested = {
                 agent.cancel()
                 agentOverlay.updateStatus("⏹ Stopping...")
-                MobClawAppState.addDebugLog("AGENT", "⏹ Stop requested via overlay", LogLevel.WARNING)
+                MobClawAppState.addDebugLog("AGENT", "Stop requested via overlay", LogLevel.WARNING)
             }
 
             val result = agent.execute(task)
@@ -244,7 +245,7 @@ class MainActivity : ComponentActivity() {
             MobClawAppState.agentState = if (result.success) AgentUiState.SUCCESS else AgentUiState.FAILED
             MobClawAppState.addDebugLog(
                 "AGENT",
-                "${if (result.success) "✅" else "❌"} ${result.message.take(100)}",
+                "${result.message.take(100)}",
                 if (result.success) LogLevel.INFO else LogLevel.ERROR,
             )
         } catch (e: Exception) {

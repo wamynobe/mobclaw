@@ -8,7 +8,9 @@ import kotlinx.serialization.json.*
  * Dispatcher that parses JSON tool calls from LLM responses.
  * Supports both native function calling and XML-style fallback.
  */
-class JsonActionDispatcher : ActionDispatcher {
+class JsonActionDispatcher(
+    private val sendToolSpecs: Boolean = false
+) : ActionDispatcher {
 
     override fun parseResponse(response: ChatResponse): Pair<String, List<MobAction>> {
         val text = response.textOrEmpty()
@@ -75,23 +77,25 @@ class JsonActionDispatcher : ActionDispatcher {
     }
 
     override fun promptInstructions(tools: List<MobTool>): String = buildString {
-        appendLine("## Tool Use Protocol")
-        appendLine()
-        appendLine("To use a tool, wrap a JSON object in <tool_call></tool_call> tags:")
-        appendLine()
-        appendLine("<tool_call>")
-        appendLine("""{"name": "tool_name", "arguments": {"param": "value"}}""")
-        appendLine("</tool_call>")
-        appendLine()
-        appendLine("You may use multiple tool calls in a single response.")
-        appendLine("After tool execution, results appear in <tool_result> tags.")
-        appendLine("Continue reasoning with the results until the task is complete.")
-        appendLine()
-        appendLine("### Available Tools")
-        appendLine()
-        for (tool in tools) {
-            appendLine("- **${tool.name}**: ${tool.description}")
-            appendLine("  Parameters: `${tool.parametersSchema()}`")
+        if (!sendToolSpecs) {
+            appendLine("## Tool Use Protocol")
+            appendLine()
+            appendLine("To use a tool, wrap a JSON object in <tool_call></tool_call> tags:")
+            appendLine()
+            appendLine("<tool_call>")
+            appendLine("""{"name": "tool_name", "arguments": {"param": "value"}}""")
+            appendLine("</tool_call>")
+            appendLine()
+            appendLine("You may use multiple tool calls in a single response.")
+            appendLine("After tool execution, results appear in <tool_result> tags.")
+            appendLine("Continue reasoning with the results until the task is complete.")
+            appendLine()
+            appendLine("### Available Tools")
+            appendLine()
+            for (tool in tools) {
+                appendLine("- **${tool.name}**: ${tool.description}")
+                appendLine("  Parameters: `${tool.parametersSchema()}`")
+            }
         }
     }
 
@@ -112,5 +116,5 @@ class JsonActionDispatcher : ActionDispatcher {
         }
     }
 
-    override fun shouldSendToolSpecs(): Boolean = false
+    override fun shouldSendToolSpecs(): Boolean = sendToolSpecs
 }
